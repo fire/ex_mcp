@@ -356,14 +356,6 @@ defmodule ExMCP.HttpPlug do
       {:ok, _token_info} ->
         _original_session_id = get_session_id(conn)
 
-        conn =
-          conn
-          |> maybe_add_cors_headers(opts)
-          |> put_resp_header("content-type", "text/event-stream")
-          |> put_resp_header("cache-control", "no-cache")
-          |> put_resp_header("connection", "keep-alive")
-          |> send_chunked(200)
-
         # Extract client information for session
         client_info = %{
           user_agent: get_req_header(conn, "user-agent") |> List.first(),
@@ -407,12 +399,20 @@ defmodule ExMCP.HttpPlug do
             })
           end
 
+        # Set up SSE connection with session ID in headers
+        conn =
+          conn
+          |> maybe_add_cors_headers(opts)
+          |> put_resp_header("content-type", "text/event-stream")
+          |> put_resp_header("cache-control", "no-cache")
+          |> put_resp_header("connection", "keep-alive")
+          |> put_resp_header("mcp-session-id", final_session_id)
+          |> send_chunked(200)
+
         # Check if we're in test mode via application environment
         if Application.get_env(:ex_mcp, :test_mode, false) do
-          # Send a simple connection message and return for testing
-          {:ok, conn} =
-            chunk(conn, "event: connected\ndata: {\"session_id\": \"#{final_session_id}\"}\n\n")
-
+          # Don't send connected event - MCP compliant
+          # Session ID is available via HTTP headers
           conn
         else
           # Use the new SSE handler with backpressure control

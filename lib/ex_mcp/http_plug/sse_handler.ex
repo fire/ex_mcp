@@ -26,7 +26,7 @@ defmodule ExMCP.HttpPlug.SSEHandler do
   require Logger
 
   @max_mailbox_size 10
-  @heartbeat_interval 30_000
+  # @heartbeat_interval 30_000  # Disabled for MCP compliance
   @event_id_buffer_size 1000
 
   defstruct [
@@ -108,36 +108,29 @@ defmodule ExMCP.HttpPlug.SSEHandler do
     # Extract Last-Event-ID if provided
     last_event_id = extract_last_event_id(conn)
 
-    # Send initial connection event
-    event_id = generate_event_id(0)
+    # Don't send "connected" event - MCP compliant
+    # Session ID is available via HTTP headers (mcp-session-id)
+    # Heartbeats disabled for MCP compliance
 
-    case send_sse_event(conn, "connected", %{session_id: session_id}, event_id) do
-      {:ok, conn} ->
-        # Start heartbeat timer
-        heartbeat_ref = Process.send_after(self(), :heartbeat, @heartbeat_interval)
+    # Initialize state
+    state = %__MODULE__{
+      conn: conn,
+      session_id: session_id,
+      opts: opts,
+      event_counter: 1,
+      event_buffer: :queue.new(),
+      # Heartbeats disabled for MCP compliance
+      heartbeat_ref: nil,
+      producers: MapSet.new(),
+      last_event_id: last_event_id
+    }
 
-        # Initialize state
-        state = %__MODULE__{
-          conn: conn,
-          session_id: session_id,
-          opts: opts,
-          event_counter: 1,
-          event_buffer: :queue.new(),
-          heartbeat_ref: heartbeat_ref,
-          producers: MapSet.new(),
-          last_event_id: last_event_id
-        }
-
-        # If we have a Last-Event-ID, request replay
-        if last_event_id do
-          request_event_replay(state)
-        end
-
-        {:ok, state}
-
-      {:error, reason} ->
-        {:stop, {:connection_failed, reason}}
+    # If we have a Last-Event-ID, request replay
+    if last_event_id do
+      request_event_replay(state)
     end
+
+    {:ok, state}
   end
 
   @impl true
@@ -210,17 +203,9 @@ defmodule ExMCP.HttpPlug.SSEHandler do
 
   @impl true
   def handle_info(:heartbeat, state) do
-    # Send heartbeat
-    case send_sse_event(state.conn, "heartbeat", %{timestamp: System.system_time(:second)}, nil) do
-      {:ok, conn} ->
-        # Schedule next heartbeat
-        heartbeat_ref = Process.send_after(self(), :heartbeat, @heartbeat_interval)
-        {:noreply, %{state | conn: conn, heartbeat_ref: heartbeat_ref}}
-
-      {:error, _reason} ->
-        # Connection failed
-        {:stop, :normal, %{state | conn: nil}}
-    end
+    # Heartbeats disabled for MCP compliance
+    # This handler remains for backward compatibility but does nothing
+    {:noreply, state}
   end
 
   @impl true
