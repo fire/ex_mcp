@@ -193,14 +193,32 @@ defmodule ExMCP.HttpPlug do
 
       case result do
         {:ok, response} ->
-          # If SSE is enabled, send response via SSE instead of HTTP response
+          # If SSE is enabled, try to send response via SSE
+          # Fall back to HTTP if no SSE connection exists
           if opts.sse_enabled do
-            Logger.debug("SSE mode: sending response via SSE: #{inspect(response)}")
-            send_response_via_sse(response, conn, opts)
-            # Return 202 Accepted for the POST request
-            conn
-            |> maybe_add_cors_headers(opts)
-            |> send_resp(202, "")
+            session_id = get_session_id(conn)
+
+            # Check if there's an active SSE connection for this session
+            case lookup_sse_handler(session_id) do
+              {:ok, _handler_pid} ->
+                # Active SSE connection exists, send via SSE
+                Logger.debug("SSE mode: sending response via SSE: #{inspect(response)}")
+                send_response_via_sse(response, conn, opts)
+                # Return 202 Accepted for the POST request
+                conn
+                |> maybe_add_cors_headers(opts)
+                |> send_resp(202, "")
+
+              {:error, _reason} ->
+                # No active SSE connection, fall back to HTTP response
+                Logger.debug("No SSE connection found, sending HTTP response instead")
+
+                conn
+                |> maybe_add_cors_headers(opts)
+                |> maybe_add_protocol_version_header()
+                |> put_resp_content_type("application/json")
+                |> send_resp(200, Jason.encode!(response))
+            end
           else
             # Non-SSE mode: send response in HTTP body
             conn
