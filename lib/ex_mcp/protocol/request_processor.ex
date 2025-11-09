@@ -22,7 +22,7 @@ defmodule ExMCP.Protocol.RequestProcessor do
 
   alias ExMCP.Error
   alias ExMCP.Internal.VersionRegistry
-  alias ExMCP.Protocol.ResponseBuilder
+  alias ExMCP.Protocol.{ResponseBuilder, ToolFormatter}
   require Logger
 
   @type request :: map()
@@ -132,7 +132,7 @@ defmodule ExMCP.Protocol.RequestProcessor do
 
   # Tools list request
   defp process_tools_list(%{"id" => id}, state) do
-    tools = get_tools(state) |> Map.values()
+    tools = get_tools(state) |> Map.values() |> Enum.map(&ToolFormatter.format/1)
     result = %{"tools" => tools}
     response = ResponseBuilder.build_success_response(result, id)
     {:response, response, state}
