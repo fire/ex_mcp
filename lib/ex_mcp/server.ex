@@ -1061,7 +1061,10 @@ defmodule ExMCP.Server do
 
           defp process_request(%{"method" => "tools/list"} = request, state) do
             id = Map.get(request, "id")
-            tools = get_tools() |> Map.values() |> Enum.map(&format_tool_for_mcp/1)
+
+            tools =
+              get_tools() |> Map.values() |> Enum.map(&ExMCP.Protocol.ToolFormatter.format/1)
+
             result = %{"tools" => tools}
             response = ResponseBuilder.build_success_response(result, id)
             {:response, response, state}
