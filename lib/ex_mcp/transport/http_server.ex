@@ -285,21 +285,31 @@ if Code.ensure_loaded?(Plug) do
       send_json_response(conn, 200, responses)
     end
 
-    defp call_server_method(server_pid, method, _params) do
-      # This is a simplified mapping - in a real implementation,
-      # you'd want more comprehensive method handling
+    defp call_server_method(server_pid, method, params) do
+      # Use the standard GenServer call interface
       case method do
         "initialize" ->
+          # Get server info and capabilities
+          server_info = GenServer.call(server_pid, :get_server_info, 5000)
+          capabilities = GenServer.call(server_pid, :get_capabilities, 5000)
+
           {:ok,
            %{
-             protocolVersion: "2025-03-26",
-             serverInfo: %{name: "http-server", version: "1.0.0"},
-             capabilities: %{}
+             protocolVersion: Map.get(params, "protocolVersion", "2025-06-18"),
+             serverInfo: server_info,
+             capabilities: capabilities
            }}
 
         "tools/list" ->
-          # Call the actual server
-          GenServer.call(server_pid, {:handle_list_tools, nil})
+          # Get tools and format them for MCP
+          tools = GenServer.call(server_pid, :get_tools, 5000)
+
+          formatted_tools =
+            tools
+            |> Map.values()
+            |> Enum.map(&ExMCP.Protocol.ToolFormatter.format/1)
+
+          {:ok, %{tools: formatted_tools}}
 
         _ ->
           {:error, "Method not implemented: #{method}"}
