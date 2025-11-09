@@ -385,7 +385,10 @@ defmodule ExMCP.MessageProcessor do
   end
 
   defp handle_tools_list(conn, handler_module, id) do
-    tools = handler_module.get_tools() |> Map.values()
+    tools =
+      handler_module.get_tools()
+      |> Map.values()
+      |> Enum.map(&ExMCP.Protocol.ToolFormatter.format/1)
 
     response = %{
       "jsonrpc" => "2.0",
@@ -580,7 +583,10 @@ defmodule ExMCP.MessageProcessor do
   end
 
   defp handle_tools_list_with_server(conn, server_pid, id) do
-    tools = GenServer.call(server_pid, :get_tools, 5000) |> Map.values()
+    tools =
+      GenServer.call(server_pid, :get_tools, 5000)
+      |> Map.values()
+      |> Enum.map(&ExMCP.Protocol.ToolFormatter.format/1)
 
     response = %{
       "jsonrpc" => "2.0",
