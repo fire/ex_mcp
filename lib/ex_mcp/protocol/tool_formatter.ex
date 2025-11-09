@@ -49,7 +49,8 @@ defmodule ExMCP.Protocol.ToolFormatter do
   defp maybe_add_title(acc, tool) do
     title =
       tool["display_name"] ||
-        (tool["meta"] && is_map(tool["meta"]) && tool["meta"]["name"])
+        (tool["meta"] && is_map(tool["meta"]) &&
+           (tool["meta"]["name"] || tool["meta"][:name]))
 
     if title, do: Map.put(acc, "title", title), else: acc
   end
