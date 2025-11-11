@@ -257,6 +257,15 @@ defmodule ExMCP.MessageProcessor do
           end
         end
 
+      {:error, {:already_started, pid}} ->
+        # Server already started, use existing instance
+        try do
+          process_with_server_pid(conn, pid, server_info)
+        after
+          # Don't stop the existing server, just clean up if it's a temporary one
+          # (In this case, we're reusing an existing instance, so we don't stop it)
+        end
+
       {:error, reason} ->
         error_response = %{
           "jsonrpc" => "2.0",
@@ -336,7 +345,14 @@ defmodule ExMCP.MessageProcessor do
 
   defp start_temporary_server(handler_module) do
     # Start a temporary GenServer instance
-    handler_module.start_link([])
+    case handler_module.start_link([]) do
+      {:error, {:already_started, pid}} = result ->
+        # Return the existing PID - MessageProcessor will handle it
+        {:ok, pid}
+      
+      result ->
+        result
+    end
   end
 
   # Process request using Server handler
