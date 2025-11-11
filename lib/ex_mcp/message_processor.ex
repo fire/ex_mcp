@@ -431,41 +431,28 @@ defmodule ExMCP.MessageProcessor do
     tool_name = Map.get(params, "name")
     arguments = Map.get(params, "arguments", %{})
 
-    try do
-      case handler_module.handle_tool_call(tool_name, arguments, %{}) do
-        {:ok, result} ->
-          response = success_response(result, id)
-          put_response(conn, response)
+    case handler_module.handle_tool_call(tool_name, arguments, %{}) do
+      {:ok, result} ->
+        response = success_response(result, id)
+        put_response(conn, response)
 
-        {:ok, result, _state} ->
-          # Handler returned state but we don't use it in HTTP mode
-          response = success_response(result, id)
-          put_response(conn, response)
+      {:ok, result, _state} ->
+        # Handler returned state but we don't use it in HTTP mode
+        response = success_response(result, id)
+        put_response(conn, response)
 
-        {:error, reason} ->
-          error_resp = error_response("Tool execution failed", reason, id)
-          put_response(conn, error_resp)
-
-        {:error, reason, _state} ->
-          # Handler returned state but we don't use it in HTTP mode
-          error_resp = error_response("Tool execution failed", reason, id)
-          put_response(conn, error_resp)
-
-        other ->
-          # Unexpected return format
-          error_resp = error_response("Tool execution failed", "Unexpected return format: #{inspect(other)}", id)
-          put_response(conn, error_resp)
-      end
-    rescue
-      e ->
-        # Return error response, then let it crash
-        error_resp = error_response("Tool execution failed", Exception.message(e), id)
+      {:error, reason} ->
+        error_resp = error_response("Tool execution failed", reason, id)
         put_response(conn, error_resp)
-        # Don't reraise - let the error response be sent, supervisor will handle crashes
-    catch
-      kind, reason ->
-        # Catch any other exceptions (exit, throw, etc.)
-        error_resp = error_response("Tool execution failed", "#{kind}: #{inspect(reason)}", id)
+
+      {:error, reason, _state} ->
+        # Handler returned state but we don't use it in HTTP mode
+        error_resp = error_response("Tool execution failed", reason, id)
+        put_response(conn, error_resp)
+
+      other ->
+        # Unexpected return format
+        error_resp = error_response("Tool execution failed", "Unexpected return format: #{inspect(other)}", id)
         put_response(conn, error_resp)
     end
   end
@@ -597,12 +584,28 @@ defmodule ExMCP.MessageProcessor do
   end
 
   defp success_response(result, id) do
+    # Normalize atom keys to strings to ensure JSON encoding works
+    normalized_result = normalize_keys_for_json(result)
     %{
       "jsonrpc" => "2.0",
-      "result" => result,
+      "result" => normalized_result,
       "id" => id
     }
   end
+
+  # Recursively convert atom keys to strings for JSON encoding
+  defp normalize_keys_for_json(value) when is_map(value) do
+    Enum.reduce(value, %{}, fn
+      {k, v}, acc when is_atom(k) -> 
+        Map.put(acc, Atom.to_string(k), normalize_keys_for_json(v))
+      {k, v}, acc -> 
+        Map.put(acc, k, normalize_keys_for_json(v))
+    end)
+  end
+  defp normalize_keys_for_json(value) when is_list(value) do
+    Enum.map(value, &normalize_keys_for_json/1)
+  end
+  defp normalize_keys_for_json(value), do: value
 
   defp error_response(message, reason, id) do
     %{

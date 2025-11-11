@@ -494,6 +494,8 @@ defmodule ExMCP.HttpPlug do
               # Notifications don't get responses - return special marker
               {:notification, nil}
             else
+              # MCP/JSON-RPC 2.0 spec: must return valid JSON-RPC error response
+              Logger.error("Handler did not provide a response for request: #{inspect(request)}")
               {:error, :no_response}
             end
 
@@ -501,8 +503,36 @@ defmodule ExMCP.HttpPlug do
             # JSON-RPC error responses are still valid HTTP responses
             {:ok, response}
 
+          response when is_map(response) ->
+            # Ensure response has required JSON-RPC 2.0 fields
+            if Map.has_key?(response, "jsonrpc") and Map.has_key?(response, "id") do
+              {:ok, response}
+            else
+              # Invalid response format - return error
+              Logger.error("Invalid response format from handler: #{inspect(response)}")
+              error_response = %{
+                "jsonrpc" => "2.0",
+                "error" => %{
+                  "code" => ErrorCodes.internal_error(),
+                  "message" => "Internal error: invalid response format from handler"
+                },
+                "id" => Map.get(request, "id")
+              }
+              {:ok, error_response}
+            end
+
           response ->
-            {:ok, response}
+            # Unexpected response type - return error
+            Logger.error("Unexpected response type from handler: #{inspect(response)}")
+            error_response = %{
+              "jsonrpc" => "2.0",
+              "error" => %{
+                "code" => ErrorCodes.internal_error(),
+                "message" => "Internal error: unexpected response type from handler"
+              },
+              "id" => Map.get(request, "id")
+            }
+            {:ok, error_response}
         end
 
       handler_fun when is_function(handler_fun, 1) ->
