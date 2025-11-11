@@ -365,12 +365,24 @@ defmodule ExMCP.MessageProcessor do
     # Debug logging for tests
     log_method_processing(method, handler_module)
 
-    case Map.get(handler_direct_dispatch(), method) do
-      nil ->
-        handle_custom_method(conn, handler_module, method, params, id)
+    try do
+      case Map.get(handler_direct_dispatch(), method) do
+        nil ->
+          handle_custom_method(conn, handler_module, method, params, id)
 
-      handler_fun ->
-        handler_fun.(conn, handler_module, server_info, params, id)
+        handler_fun ->
+          handler_fun.(conn, handler_module, server_info, params, id)
+      end
+    rescue
+      e ->
+        # Ensure we always return a response, even on exception
+        error_resp = error_response("Request processing failed", Exception.message(e), id)
+        put_response(conn, error_resp)
+    catch
+      kind, reason ->
+        # Catch any other exceptions (exit, throw, etc.)
+        error_resp = error_response("Request processing failed", "#{kind}: #{inspect(reason)}", id)
+        put_response(conn, error_resp)
     end
   end
 
@@ -419,14 +431,42 @@ defmodule ExMCP.MessageProcessor do
     tool_name = Map.get(params, "name")
     arguments = Map.get(params, "arguments", %{})
 
-    case handler_module.handle_tool_call(tool_name, arguments, %{}) do
-      {:ok, result} ->
-        response = success_response(result, id)
-        put_response(conn, response)
+    try do
+      case handler_module.handle_tool_call(tool_name, arguments, %{}) do
+        {:ok, result} ->
+          response = success_response(result, id)
+          put_response(conn, response)
 
-      {:error, reason} ->
-        error_response = error_response("Tool execution failed", reason, id)
-        put_response(conn, error_response)
+        {:ok, result, _state} ->
+          # Handler returned state but we don't use it in HTTP mode
+          response = success_response(result, id)
+          put_response(conn, response)
+
+        {:error, reason} ->
+          error_resp = error_response("Tool execution failed", reason, id)
+          put_response(conn, error_resp)
+
+        {:error, reason, _state} ->
+          # Handler returned state but we don't use it in HTTP mode
+          error_resp = error_response("Tool execution failed", reason, id)
+          put_response(conn, error_resp)
+
+        other ->
+          # Unexpected return format
+          error_resp = error_response("Tool execution failed", "Unexpected return format: #{inspect(other)}", id)
+          put_response(conn, error_resp)
+      end
+    rescue
+      e ->
+        # Return error response, then let it crash
+        error_resp = error_response("Tool execution failed", Exception.message(e), id)
+        put_response(conn, error_resp)
+        # Don't reraise - let the error response be sent, supervisor will handle crashes
+    catch
+      kind, reason ->
+        # Catch any other exceptions (exit, throw, etc.)
+        error_resp = error_response("Tool execution failed", "#{kind}: #{inspect(reason)}", id)
+        put_response(conn, error_resp)
     end
   end
 
